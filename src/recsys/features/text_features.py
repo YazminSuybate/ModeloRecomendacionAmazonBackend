@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from recsys.config import ContentConfig
-
-TEXT_FIELDS = ["title", "features", "description", "categories", "store"]
+from recsys.config import TEXT_FIELDS, ContentConfig
 
 
 def _flatten(value: object) -> str:
@@ -19,20 +20,22 @@ def _flatten(value: object) -> str:
     return str(value)
 
 
-def build_item_text(meta: pd.DataFrame) -> pd.Series:
-    """Concatena los campos descriptivos de cada producto en un solo texto.
+def build_item_text(meta: pd.DataFrame, fields: Sequence[str] = TEXT_FIELDS) -> pd.Series:
+    """Concatena los atributos descriptivos de cada producto (I1 = len(fields)).
 
-    Los campos faltantes se imputan con texto vacío (tratamiento de R13 para los campos con
-    completitud menor al umbral).
+    Los campos faltantes se imputan con texto vacío (tratamiento de los campos con completitud
+    menor al umbral).
     """
-    return meta[TEXT_FIELDS].map(_flatten).agg(" ".join, axis=1).str.lower()
+    return meta[list(fields)].map(_flatten).agg(" ".join, axis=1).str.lower()
 
 
 def fit_tfidf(texts: pd.Series, config: ContentConfig) -> tuple[TfidfVectorizer, sp.csr_matrix]:
+    """Vectores TF-IDF (L2) por ítem; I2 = tamaño del vocabulario aprendido."""
     vectorizer = TfidfVectorizer(
         max_features=config.max_features,
         ngram_range=config.ngram_range,
         min_df=config.min_df,
         sublinear_tf=True,
+        dtype=np.float32,
     )
     return vectorizer, vectorizer.fit_transform(texts)

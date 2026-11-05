@@ -1,4 +1,4 @@
-"""R13: reglas de calidad de datos (duplicados y completitud)."""
+"""Reglas de calidad de datos (duplicados y completitud)."""
 
 from __future__ import annotations
 
@@ -56,9 +56,10 @@ def apply_quality_rules(
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     """Aplica las reglas de calidad y devuelve cuántos registros eliminó cada una.
 
-    La completitud de los metadatos se mide por campo (I1 = valores no nulos / valores
-    esperados). Un campo bajo `min_completeness` no elimina productos: se conserva y sus
-    valores faltantes se imputan con texto vacío al construir el texto de la Etapa 1.
+    La completitud de los metadatos se mide por campo (valores no nulos / valores esperados).
+    Es un control de calidad de la Fase 03 de CRISP-DM, no un indicador de la matriz. Un campo
+    bajo `min_completeness` no elimina productos: se conserva y sus valores faltantes se imputan
+    con texto vacío al construir el texto de la Etapa 1.
     """
     report: dict[str, Any] = {}
 

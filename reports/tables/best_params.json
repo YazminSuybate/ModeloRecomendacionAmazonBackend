@@ -1,0 +1,16 @@
+{
+  "metric": "f1@10",
+  "als": {
+    "factors": 128,
+    "regularization": 0.01,
+    "alpha": 40.0
+  },
+  "hybrid": {
+    "n_candidates": 3000,
+    "blend_weight": 0.85
+  },
+  "validation": {
+    "als": 0.02192103532290708,
+    "hybrid": 0.021525661571599
+  }
+}

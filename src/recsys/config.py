@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,9 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "config.yaml"
 
-MIN_INTERACTIONS = 5  # R2: exigencia de la tesis
+MIN_INTERACTIONS = 5  # Muestra de la tesis: usuarios con al menos 5 interacciones
+ALTERNATIVES = ("greater", "two-sided")
+TEXT_FIELDS = ("title", "features", "description", "categories", "store")
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,14 @@ class PathsConfig:
     processed: Path
     reports: Path
     artifacts: Path
+
+    @property
+    def models(self) -> Path:
+        return self.artifacts / "models"
+
+    @property
+    def tables(self) -> Path:
+        return self.reports / "tables"
 
 
 @dataclass(frozen=True)
@@ -32,6 +43,18 @@ class DatasetConfig:
 
 
 @dataclass(frozen=True)
+class PeriodConfig:
+    """Periodo de la población; ambas fechas se incluyen."""
+
+    start: date
+    end: date
+
+    def __post_init__(self) -> None:
+        if self.start > self.end:
+            raise ValueError(f"period.start ({self.start}) es posterior a period.end ({self.end})")
+
+
+@dataclass(frozen=True)
 class QualityConfig:
     min_completeness: float
     meta_completeness_fields: tuple[str, ...]
@@ -39,23 +62,25 @@ class QualityConfig:
 
 @dataclass(frozen=True)
 class FilteringConfig:
-    k_core: int
+    min_user_interactions: int
 
     def __post_init__(self) -> None:
-        if self.k_core < MIN_INTERACTIONS:
+        if self.min_user_interactions < MIN_INTERACTIONS:
             raise ValueError(
-                f"La tesis exige k_core >= {MIN_INTERACTIONS}, se recibió {self.k_core}"
+                f"La tesis exige min_user_interactions >= {MIN_INTERACTIONS}, "
+                f"se recibió {self.min_user_interactions}"
             )
 
 
 @dataclass(frozen=True)
 class SplitConfig:
-    val_ratio: float
-    test_ratio: float
+    test_ratio: float  # 20 % de cada usuario
+    val_ratio: float  # fracción del 80 % de train que se usa como validación del ajuste
 
     def __post_init__(self) -> None:
-        if not 0 < self.val_ratio + self.test_ratio < 1:
-            raise ValueError("val_ratio + test_ratio debe estar entre 0 y 1")
+        for name, ratio in (("test_ratio", self.test_ratio), ("val_ratio", self.val_ratio)):
+            if not 0 < ratio < 1:
+                raise ValueError(f"{name} debe estar entre 0 y 1, se recibió {ratio}")
 
 
 @dataclass(frozen=True)
@@ -66,11 +91,23 @@ class EvaluationConfig:
 
 
 @dataclass(frozen=True)
+class StatisticsConfig:
+    alpha: float
+    alternative: str
+    min_relative_improvement: float
+
+    def __post_init__(self) -> None:
+        if self.alternative not in ALTERNATIVES:
+            raise ValueError(f"statistics.alternative debe ser uno de {ALTERNATIVES}")
+
+
+@dataclass(frozen=True)
 class ContentConfig:
     max_features: int
     ngram_range: tuple[int, int]
     min_df: int
     n_candidates: int
+    text_fields: tuple[str, ...] = TEXT_FIELDS  # I1 = número de atributos
 
 
 @dataclass(frozen=True)
@@ -87,6 +124,18 @@ class HybridConfig:
 
 
 @dataclass(frozen=True)
+class TuningConfig:
+    """Grillas que `04_tune` recorre sobre validación; `metric` decide la mejor combinación."""
+
+    metric: str
+    als_factors: tuple[int, ...]
+    als_regularization: tuple[float, ...]
+    als_alpha: tuple[float, ...]
+    n_candidates: tuple[int, ...]
+    blend_weights: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class DemoConfig:
     n_users: int
     top_k: int
@@ -97,14 +146,21 @@ class Config:
     seed: int
     paths: PathsConfig
     dataset: DatasetConfig
+    period: PeriodConfig
     quality: QualityConfig
     filtering: FilteringConfig
     split: SplitConfig
     evaluation: EvaluationConfig
+    statistics: StatisticsConfig
     content: ContentConfig
     als: ALSConfig
     hybrid: HybridConfig
+    tuning: TuningConfig
     demo: DemoConfig
+
+
+def _date(value: Any) -> date:
+    return value if isinstance(value, date) else date.fromisoformat(str(value))
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
@@ -114,6 +170,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
         seed=raw["seed"],
         paths=PathsConfig(**{key: PROJECT_ROOT / value for key, value in raw["paths"].items()}),
         dataset=DatasetConfig(**raw["dataset"]),
+        period=PeriodConfig(start=_date(raw["period"]["start"]), end=_date(raw["period"]["end"])),
         quality=QualityConfig(
             min_completeness=quality["min_completeness"],
             meta_completeness_fields=tuple(quality["meta_completeness_fields"]),
@@ -125,8 +182,18 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
             relevance_threshold=evaluation["relevance_threshold"],
             batch_size=evaluation["batch_size"],
         ),
-        content=ContentConfig(**{**content, "ngram_range": tuple(content["ngram_range"])}),
+        statistics=StatisticsConfig(**raw["statistics"]),
+        content=ContentConfig(
+            **{
+                **content,
+                "ngram_range": tuple(content["ngram_range"]),
+                "text_fields": tuple(content.get("text_fields", TEXT_FIELDS)),
+            }
+        ),
         als=ALSConfig(**raw["als"]),
         hybrid=HybridConfig(**raw["hybrid"]),
+        tuning=TuningConfig(
+            **{key: tuple(v) if isinstance(v, list) else v for key, v in raw["tuning"].items()}
+        ),
         demo=DemoConfig(**raw["demo"]),
     )

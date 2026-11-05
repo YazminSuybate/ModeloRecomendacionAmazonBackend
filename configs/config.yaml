@@ -1,4 +1,5 @@
 # Configuración única del experimento. Ningún parámetro va escrito en el código.
+# Alineada con la Matriz de Consistencia vigente (indicadores I1-I12).
 seed: 42
 
 paths:                      # relativas a la raíz del proyecto, o absolutas (datos en D: por espacio)
@@ -8,42 +9,63 @@ paths:                      # relativas a la raíz del proyecto, o absolutas (da
   reports: reports
   artifacts: artifacts
 
-dataset:                    # R1: Amazon Reviews 2023
+dataset:                    # Amazon Reviews 2023 (Hou et al., 2024)
   name: McAuley-Lab/Amazon-Reviews-2023
   category: Video_Games
   reviews_url: https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023/resolve/main/raw/review_categories/{category}.jsonl
   meta_url: https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023/resolve/main/raw/meta_categories/meta_{category}.jsonl
 
-quality:                    # R13: duplicados y completitud por campo (I1); bajo el umbral se imputa vacío
+period:                     # Población: enero 2022 - septiembre 2023 (ambas fechas incluidas)
+  start: "2022-01-01"
+  end: "2023-09-30"
+
+quality:                    # duplicados y completitud por campo; bajo el umbral se imputa vacío
   min_completeness: 0.9
   meta_completeness_fields: [title, features, description, categories, store]
 
-filtering:                  # R2: perfiles activos
-  k_core: 5
+filtering:                  # Muestra: usuarios con al menos 5 interacciones (los ítems no se filtran)
+  min_user_interactions: 5
 
 split:                      # partición temporal por usuario
-  val_ratio: 0.2
-  test_ratio: 0.2
+  test_ratio: 0.2           # train-test 80/20 de la tesis
+  val_ratio: 0.2            # validación del ajuste: el 20 % más reciente del 80 % de train
 
-evaluation:                 # R7-R10
+evaluation:
   k_values: [5, 10, 20]
-  relevance_threshold: 4.0
+  relevance_threshold: 4.0  # relevante = calificación >= 4
   batch_size: 512
 
-content:                    # R3: Etapa 1
-  max_features: 50000
+statistics:                 # prueba de hipótesis sobre diferencias pareadas por usuario
+  alpha: 0.05
+  alternative: greater      # H1 direccional: O2 (híbrido) > O1 (popularidad)
+  min_relative_improvement: 0.10   # meta: mejora relativa >= 10 %
+
+# Los valores de content, als e hybrid se ajustaron con la muestra anterior (k-core, 60/20/20);
+# hay que volver a correr 04_tune con la muestra nueva y copiar aquí best_params.json.
+
+content:                    # VI-D1: módulo de filtrado basado en contenido (Etapa 1)
+  text_fields: [title, features, description, categories, store]   # I1 = número de atributos
+  max_features: 50000       # tope de I2 (la dimensión real es el vocabulario aprendido)
   ngram_range: [1, 2]
   min_df: 2
-  n_candidates: 300
+  n_candidates: 3000        # ajustado en validación (04_tune)
 
-als:                        # R4: Etapa 2
-  factors: 64
-  regularization: 0.01
+als:                        # VI-D2: módulo de factorización ALS (Etapa 2)
+  factors: 128              # I3; ajustado en validación (04_tune)
+  regularization: 0.01      # I4
   iterations: 20
-  alpha: 40.0
+  alpha: 40.0               # ajustado en validación (04_tune)
 
-hybrid:                     # R5
-  blend_weight: 0.7         # peso de ALS en la mezcla con el puntaje de contenido
+hybrid:                     # VI-D3: estrategia de hibridación
+  blend_weight: 0.85        # I5: peso de ALS en la mezcla; ajustado en validación (04_tune)
+
+tuning:                     # 04_tune: búsqueda sobre validación (nunca sobre test)
+  metric: ndcg@10           # I9 (calidad del ranking); F1 ya no es indicador de la matriz
+  als_factors: [32, 64, 128]
+  als_regularization: [0.01, 0.1]
+  als_alpha: [10.0, 40.0]
+  n_candidates: [100, 300, 1000, 3000]
+  blend_weights: [0.0, 0.25, 0.5, 0.7, 0.85, 1.0]
 
 demo:                       # paquete que consume el prototipo visual (backend/)
   n_users: 500              # muestra de usuarios de test exportados

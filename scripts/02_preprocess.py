@@ -1,10 +1,24 @@
-"""Paso 2: calidad (R13) → k-core (R2) → codificación → partición temporal."""
+"""Paso 2 (CRISP-DM, Fase 03): periodo → calidad → usuarios activos → codificación → partición.
+
+1. Población: reseñas de Video_Games entre `period.start` y `period.end`.
+2. Calidad: registros incompletos, una interacción por par usuario-ítem, ítems sin metadatos.
+3. Muestra: usuarios con al menos `min_user_interactions` interacciones (los ítems no se filtran).
+4. Partición temporal por usuario: test = 20 %; validación = 20 % más reciente del 80 % restante.
+
+El tamaño de la muestra queda en `sample_report.json` (también en `reports/tables/`) para
+contrastarlo con la tesis (3.1.5).
+"""
 
 import json
 
 from recsys.config import load_config
 from recsys.data.loader import raw_paths, read_jsonl
-from recsys.data.preprocessing import encode_ids, k_core_filter
+from recsys.data.preprocessing import (
+    encode_ids,
+    filter_active_users,
+    filter_period,
+    sample_report,
+)
 from recsys.data.quality import apply_quality_rules
 from recsys.data.splitting import temporal_user_split
 from recsys.data.storage import save_processed
@@ -22,13 +36,18 @@ def main() -> None:
     meta = read_jsonl(meta_path, META_COLUMNS)
     logger.info("Leídos: %d reseñas, %d productos", len(reviews), len(meta))
 
+    reviews = filter_period(reviews, config.period.start, config.period.end)
+    n_in_period = len(reviews)
+    logger.info("Periodo %s a %s: %d reseñas", config.period.start, config.period.end, n_in_period)
+
     reviews, meta, report = apply_quality_rules(
         reviews, meta, config.quality.meta_completeness_fields, config.quality.min_completeness
     )
     logger.info("Reglas de calidad: %s", report)
 
-    active = k_core_filter(reviews, config.filtering.k_core)
-    logger.info("k-core=%d: %d interacciones", config.filtering.k_core, len(active))
+    active = filter_active_users(reviews, config.filtering.min_user_interactions)
+    sample = sample_report(active, n_in_period)
+    logger.info("Muestra: %s", sample)
 
     encoded, users, items = encode_ids(active)
     item_table = (
@@ -37,12 +56,14 @@ def main() -> None:
     train, val, test = temporal_user_split(
         encoded, config.split.val_ratio, config.split.test_ratio
     )
-    logger.info("Usuarios=%d, productos=%d", len(users), len(items))
     logger.info("train=%d, val=%d, test=%d", len(train), len(val), len(test))
 
     processed = config.paths.processed
     save_processed({"train": train, "val": val, "test": test}, item_table, len(users), processed)
     (processed / "quality_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    for directory in (processed, config.paths.reports / "tables"):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "sample_report.json").write_text(json.dumps(sample, indent=2), "utf-8")
     logger.info("Guardado en %s", processed)
 
 

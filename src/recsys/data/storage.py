@@ -32,5 +32,12 @@ def load_splits(directory: Path) -> dict[str, InteractionData]:
     }
 
 
+def train_with_validation(splits: dict[str, InteractionData]) -> InteractionData:
+    """Train + validación: con esto se reentrena cada modelo antes de medirlo en test."""
+    train, val = splits["train"], splits["val"]
+    frame = pd.concat([train.frame, val.frame], ignore_index=True)
+    return InteractionData(frame, n_users=train.n_users, n_items=train.n_items)
+
+
 def load_items(directory: Path) -> pd.DataFrame:
     return load_parquet(directory / "items.parquet")
